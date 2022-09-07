@@ -28,5 +28,5 @@
    - Outer padding style
    - Display home (set by user or inferred if in a table/grid)
 
-### See examples on how to use the library in the `examples` folder
+### See `examples` for screenshots and how to use the library
 
