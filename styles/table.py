@@ -14,15 +14,16 @@ from core.display_property import DisplayProperty
 from styles.cell import Cell
 from styles.grid import Grid
 
-from core.table_config import ConsoleDisplayConf, PandasConf
+from core.table_config import ConsoleDisplayConf
+from core.pandas_table_config import PandasConf
 
 
 class Table(Grid):
-    config: ConsoleDisplayConf
+    config: ConsoleDisplayConf | PandasConf
 
-    __index: list[tuple[int, int]]
-    __columns: list[tuple[int, int]]
-    __data: list[list[tuple[int, int]]]
+    __index_loc: list[tuple[int, int]]
+    __columns_loc: list[tuple[int, int]]
+    __data_loc: list[list[tuple[int, int]]]
 
     __outer_borders: list[list[list[tuple[int, int]]]]  # top, right, bottom, left, corner
     __inner_borders: list[list[list[tuple[int, int]]]]  # top, right, bottom, left, corner
@@ -31,7 +32,10 @@ class Table(Grid):
             self,
             config: ConsoleDisplayConf | PandasConf,
     ):
-        self.config = config  # TODO: Convert PandasConf to ConsoleDisplayConf
+        if isinstance(config, PandasConf):
+            raise ValueError("Please convert your PandasConf to a ConsoleDisplayConf before passing it to Table.\n\nTo do this use `your_config = your_config.convert_pandas_conf_to_console_conf()`")
+        else:
+            self.config = config
 
         if self.config.in_rows is True:
             self.config.data = Grid.transform_data(cells=self.config.data)
@@ -41,13 +45,16 @@ class Table(Grid):
         #self.__print_all_cells(cells=self.config.data)
 
         super().__init__(
-            display_home=config.display_home,
+            display_home=self.config.display_home,
             cells=all_cells,
-            in_rows=config.in_rows,
+            in_rows=self.config.in_rows,
             auto_finalise=True,
-            outer_padding=config.outer_padding,
-            padding_style=config.outer_padding_style
+            outer_padding=self.config.outer_padding,
+            padding_style=self.config.outer_padding_style
         )
+
+        for c, r in self.__grid_table_to_update_home:
+            self.update_cell_home(c=c, r=r)
 
     @staticmethod
     def get_row(row: int, cells: list[list[Cell]]):
@@ -89,42 +96,13 @@ class Table(Grid):
         return row_lengths, column_heights, sum(row_lengths), sum(column_heights)
 
     def __generate_cells(self) -> list[list[Cell]]:
-        """
-        Move left to right, top to bottom, and generate the cells for the table.
-        | = write inner border if not None
-        <- = loop
-        --- = write inner border
-        Steps:
-            A)
-                1) Write corner
-                2) Write top border <-
-                3) Write corner
-            B)
-                1) Write left outer border
-                2) Write index if not None and if columns is None |
-                3) Write table_name if index is not None and columns is not None |
-                4) Write columns if not None | <-
-                5) Write right outer border
-                6) --- <-
-            C) <-
-                1) Write left outer border
-                2) Write index if not None |
-                3) Write data | <-
-                4) Write right outer border
-                5) --- <-
-            D)
-                1) Write corner
-                2) Write bottom border <-
-                3) Write corner
-
-        :return:
-        """
         cells = self.config.data
 
-        self.__table_name = None
-        self.__index = []
-        self.__columns = []
-        self.__data = [[None for _ in range(len(cells[0]))] for _ in range(len(cells))]
+        self.__grid_table_to_update_home = []
+        self.__table_name_loc = None
+        self.__index_loc = []
+        self.__columns_loc = []
+        self.__data_loc = [[None for _ in range(len(cells[0]))] for _ in range(len(cells))]
 
         # Add index and columns to cells
         data_offset = (0, 0)
@@ -169,6 +147,9 @@ class Table(Grid):
 
         for c in range(len(cells)):
             for r in range(len(cells[c])):
+                if isinstance(cells[c][r], Table) or isinstance(cells[c][r], Grid):
+                    self.__grid_table_to_update_home.append((c, r))
+
                 col = (c - 1) // 2
                 row = (r - 1) // 2
 
@@ -211,52 +192,107 @@ class Table(Grid):
                         temp = self.multiply_cell_width(cell=self.config.inner_borders[0], width=row_lengths[col])
                         cells[c][r] = temp
                 elif c < len(cells) and r < len(cells[c]):
-                    # Data
-                    if self.config.index is not None and self.config.columns is not None and col == 0 and row == 0:
-                        self.__table_name = c, r
-                    elif self.config.index is not None and self.config.columns is not None and col == 0:
-                        self.__index.append((c, r))
-                    elif self.config.index is not None and self.config.columns is not None and row == 0:
-                        self.__columns.append((c, r))
+                    # Data or index or table name or column
+                    if self.config.index is not None and self.config.columns is not None and col == 0 and row == 0:  # Both col and ind set
+                        self.__table_name_loc = c, r
+                    elif self.config.index is not None and self.config.columns is not None and col == 0:  # Both col and ind set
+                        self.__index_loc.append((c, r))
+                    elif self.config.index is not None and self.config.columns is not None and row == 0:  # Both col and ind set
+                        self.__columns_loc.append((c, r))
+                    elif self.config.columns is not None and self.config.index is None and row == 0:  # Only col set
+                        self.__columns_loc.append((c, r))
+                    elif self.config.columns is None and self.config.index is not None and col == 0:  # Only ind set
+                        self.__index_loc.append((c, r))
                     else:
                         # print(col + data_offset[0], row + data_offset[1])
-                        self.__data[col + data_offset[0]][row + data_offset[1]] = c, r
+                        self.__data_loc[col + data_offset[0]][row + data_offset[1]] = c, r
 
 
-        print(f"Table name loc: \t {self.__table_name}")
-        print(f"Index loc: \t\t {self.__index}")
-        print(f"Columns loc: \t\t {self.__columns}")
-        print(f"Data loc: \t\t {self.__data}")
-        print()
-        print()
+        # print(f"Table name loc: \t {self.__table_name_loc}")
+        # print(f"Index loc: \t\t {self.__index_loc}")
+        # print(f"Columns loc: \t\t {self.__columns_loc}")
+        # print(f"Data loc: \t\t {self.__data_loc}")
+        # print()
+        # print()
         # exit()
         return cells
 
     @staticmethod
     def multiply_cell_height(cell: Cell, height: int) -> Cell:
-        temp = [cell.text[0] for _ in range(height)]
-        temp = Cell(text=temp, style=cell.style, padding_style=cell.padding_buffer, outer_padding=cell.outer_padding, alignment=cell.alignment)
-        temp.finalise = True
+        if cell is None:
+            temp = [" " for _ in range(height)]
+            temp = Cell(text=temp)
+            temp.finalise = True
+        else:
+            temp = [cell.text[0] for _ in range(height)]
+            temp = Cell(text=temp, style=cell.style, padding_style=cell.padding_buffer, outer_padding=cell.outer_padding, alignment=cell.alignment)
+            temp.finalise = True
         return temp
 
     @staticmethod
     def multiply_cell_width(cell: Cell, width: int) -> Cell:
-        temp = [cell.text[0] * width]
-        temp = Cell(text=temp, style=cell.style, padding_style=cell.padding_buffer, outer_padding=cell.outer_padding, alignment=cell.alignment)
-        temp.finalise = True
+        if cell is None:
+            temp = [" " * width]
+            temp = Cell(text=temp)
+            temp.finalise = True
+        else:
+            temp = [cell.text[0] * width]
+            temp = Cell(text=temp, style=cell.style, padding_style=cell.padding_buffer, outer_padding=cell.outer_padding, alignment=cell.alignment)
+            temp.finalise = True
         return temp
 
+    def get_table_name_loc(self) -> tuple[int, int]:
+        return self.__table_name_loc
+
+    def get_index_loc(self) -> list[tuple[int, int]]:
+        return self.__index_loc
+
+    def get_columns_loc(self) -> list[tuple[int, int]]:
+        return self.__columns_loc
+
+    def get_data_loc(self) -> list[list[tuple[int, int]]]:
+        return self.__data_loc
+
+    def update_table_name(self, text: list[str]):
+        if self.__table_name_loc is None:
+            raise ValueError("This table does not have a table name. Please note you must have both an index and columns to have a table name.")
+        self.cells[self.__table_name_loc[0]][self.__table_name_loc[1]].text = text
+
+    def update_column(self, column: int, text: list[str]):
+        if self.config.columns is None:
+            raise ValueError("You have not set any columns for this table.")
+        self.cells[self.__columns_loc[column][0]][self.__columns_loc[column][1]].text = text
+
+    def update_index(self, row: int, text: list[str]):
+        if self.config.index is None:
+            raise ValueError("You have not set an index for this table.")
+        self.cells[self.__index_loc[row][0]][self.__index_loc[row][1]].text = text
+
     def update_cell(self, column: int, row: int, text: list[str]):
-        self.cells[self.__data[column][row][0]][self.__data[column][row][1]].text = text
+        self.cells[self.__data_loc[column][row][0]][self.__data_loc[column][row][1]].text = text
 
-    # def update_index(self, column: int, text: list[str]):
-    #     self.cells[self.__index[column][0]][self.__columns[column][1]].text = text
+    def update_nested_table_cell(
+            self,
+            nested_locs: list[tuple[int, int]],
+            text: list[str]
+    ):
+        """
+        Updates a cell in a nested table.
 
-    # TODOS:
-    """
-    1. Add update_table_name
-    2. Add update_column
-    3. Add update_index
-    4. Fix if index=None or columns=None
-    5. Fix nested table not updating display_home properly
-    """
+        nested_locs is a list of (col, row), where each item goes one level deeper into another nested table. The final
+        item nested_locs is the location of the cell to be updated.
+
+        Please note that instead of using this it is also possible to simply store the original instance of the nested
+        table that was passed into the config and call .update_cell(...).
+
+        :param nested_locs:
+        :param text:
+        :return:
+        """
+        if len(nested_locs) == 1:
+            self.update_cell(column=nested_locs[0][0], row=nested_locs[0][1], text=text)
+        else:
+            self.cells[self.__data_loc[nested_locs[0][0]][nested_locs[0][1]][0]][self.__data_loc[nested_locs[0][0]][nested_locs[0][1]][1]].update_nested_table_cell(nested_locs=nested_locs[1:], text=text)
+
+    def update_cell_home(self, c: int, r: int):
+        self.cells[c][r].set_cell_homes()

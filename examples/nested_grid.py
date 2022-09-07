@@ -44,7 +44,3 @@ def nested_grid():
                 parent_grid.cells[0][0].cells[c][r].text = [str(i)]
 
     print("\n" * 10)
-
-
-if __name__ == '__main__':
-    nested_grid()

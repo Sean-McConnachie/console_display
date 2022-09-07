@@ -48,7 +48,3 @@ class ConsoleDisplayConf:
             self.inner_borders = [None, None, None]
         else:
             self.inner_borders = inner_borders
-
-
-class PandasConf:
-    ...

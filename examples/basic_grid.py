@@ -14,7 +14,3 @@ def basic_grid():
     parent_grid.finalise = True
     parent_grid.write()
     print(10 * "\n")
-
-
-if __name__ == '__main__':
-    basic_grid()
