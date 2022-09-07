@@ -30,3 +30,4 @@
 
 ### See `examples` for screenshots and how to use the library
 
+© 2022 Sean McConnachie. All rights reserved
